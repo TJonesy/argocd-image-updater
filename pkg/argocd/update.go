@@ -63,10 +63,19 @@ const (
 
 const defaultIndent = 2
 
+type WriteBackNotifyMethod int
+
+const (
+	WriteBackNotifyNone    WriteBackNotifyMethod = 0
+	WriteBackNotifyMqtt    WriteBackNotifyMethod = 1
+	WriteBackNotifyWebhook WriteBackNotifyMethod = 2
+)
+
 // WriteBackConfig holds information on how to write back the changes to an Application
 type WriteBackConfig struct {
-	Method     WriteBackMethod
-	ArgoClient ArgoCD
+	Method       WriteBackMethod
+	NotifyMethod WriteBackNotifyMethod
+	ArgoClient   ArgoCD
 	// If GitClient is not nil, the client will be used for updates. Otherwise, a new client will be created.
 	GitClient              git.Client
 	GetCreds               GitCredsSource
@@ -361,6 +370,21 @@ func UpdateApplication(updateConf *UpdateConfiguration, state *SyncIterationStat
 		logCtx := log.WithContext().AddField("application", app)
 		log.Debugf("Using commit message: %s", wbc.GitCommitMessage)
 		if !updateConf.DryRun {
+			if wbc.NotifyMethod != WriteBackNotifyNone {
+				logCtx.Infof("Notifying %d parameter update(s) for application %s", result.NumImagesUpdated, app)
+				err := notifyChanges(&updateConf.UpdateApp.Application, wbc, state, changeList)
+				if err != nil {
+				} else {
+					annotations := updateConf.UpdateApp.Application.GetAnnotations()
+					for i, c := range changeList {
+						if !(annotations[fmt.Sprintf("argocd-image-updater.image-%d/notify-old-tag", i)] == c.OldTag.String() &&
+							annotations[fmt.Sprintf("argocd-image-updater.image-%d/notify-new-tag", i)] == c.NewTag.String()) {
+						} else {
+						}
+					}
+					updateConf.UpdateApp.Application.SetAnnotations()
+				}
+			}
 			logCtx.Infof("Committing %d parameter update(s) for application %s", result.NumImagesUpdated, app)
 			err := commitChangesLocked(&updateConf.UpdateApp.Application, wbc, state, changeList)
 			if err != nil {
@@ -787,6 +811,23 @@ func parseGitConfig(app *v1alpha1.Application, kubeClient *kube.ImageUpdaterKube
 	}
 	wbc.GetCreds = credsSource
 	return nil
+}
+
+func notifyChangesWebhook(app *v1alpha1.Application, wbc *WriteBackConfig, changeList []ChangeEntry) error {
+	return nil
+}
+
+// notifyChanges notifies any avalable changes required for updating one or more images
+// after the UpdateApplication cycle has finished.
+func notifyChanges(app *v1alpha1.Application, wbc *WriteBackConfig, changeList []ChangeEntry) error {
+	switch wbc.NotifyMethod {
+	case WriteBackNotifyWebhook:
+		return notifyChangesWebhook(app, wbc, changeList)
+	case WriteBackNotifyMqtt:
+		return notifyChangesMqtt(app, wbc, changeList)
+	default:
+		return fmt.Errorf("unknown write back method notify set: %d", wbc.NotifyMethod)
+	}
 }
 
 func commitChangesLocked(app *v1alpha1.Application, wbc *WriteBackConfig, state *SyncIterationState, changeList []ChangeEntry) error {

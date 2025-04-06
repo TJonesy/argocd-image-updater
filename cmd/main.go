@@ -8,6 +8,7 @@ import (
 	"github.com/argoproj-labs/argocd-image-updater/ext/git"
 	"github.com/argoproj-labs/argocd-image-updater/pkg/argocd"
 	"github.com/argoproj-labs/argocd-image-updater/pkg/kube"
+	"github.com/argoproj-labs/argocd-image-updater/pkg/mqtt"
 
 	"github.com/spf13/cobra"
 )
@@ -36,6 +37,7 @@ type ImageUpdaterConfig struct {
 	ArgoClient             argocd.ArgoCD
 	LogLevel               string
 	KubeClient             *kube.ImageUpdaterKubernetesClient
+	MqttClient             *mqtt.ImageUpdaterMqttClient
 	MaxConcurrency         int
 	HealthPort             int
 	MetricsPort            int
